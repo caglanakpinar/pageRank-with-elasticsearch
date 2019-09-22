@@ -1,0 +1,9 @@
+
+.DS_Store
+.idea/vcs.xml
+*.xml
+elasticsearch-7.3.1/bin/elasticsearch
+.idea/vcs.xml
+elasticsearch-7.3.1/config/jvm.options
+elasticsearch-7.3.1/config/roles.yml
+elasticsearch-7.3.1/data/nodes/0/_state/manifest-58.st
