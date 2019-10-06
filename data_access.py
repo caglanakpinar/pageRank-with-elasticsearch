@@ -1,7 +1,11 @@
+import config
+
 import json
 from pyspark import SparkConf, SparkContext
 from elasticsearch import Elasticsearch
 import os
+from pyspark.sql import SparkSession
+from pyspark.sql import Row
 
 
 def elastic_search_init(params):
@@ -10,18 +14,21 @@ def elastic_search_init(params):
 
 def spark_session_init(params):
     conf = SparkConf().setMaster(params["cluster_url"]).setAppName("pageRank_clients")
-    return SparkContext(conf=conf)
+    sc = SparkContext(conf=conf)
+    spark = SparkSession.builder.master(params["cluster_url"]).appName("test").getOrCreate()
+    return sc, spark
 
 def data_rdd(params):
-    with open("user_transaction.json") as params['transactions_path']:
-        transactions = json.loads(file.read())
-    with open("user_transaction_all.json") as params['transactions_all_path']:
-        transactions_all = json.loads(file.read())
-    with open("track_with_artist.json") as params['artists_path']:
-        track_with_artist = json.loads(file.read())
-    with open("genres.json") as params['genres_path']:
-        genres = json.loads(file.read())
+    rdds = []
+    for i in config.metrics:
+        rdds.append(params['sc'].parallelize(read_from_json(params['data_path'][config.metrics[i]])))
+    return rdds
 
-    transactions_rdd = params['sc'].parallelize(transactions)
-    transactions_all_rdd = params['sc'].parallelize(transactions_all)
-    return transactions_rdd, transactions_all_rdd, track_with_artist, genres
+def write_to_json(data, file_name):
+    with open('page_rank_'+file_name+'.json', 'w') as outfile:
+        json.dump(data, outfile)
+        
+def read_from_json(file_name):
+    with open(file_name, 'r') as file:
+        data = json.loads(file.read())
+    return data
