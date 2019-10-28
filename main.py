@@ -2,6 +2,7 @@ import data_access
 import functions
 import config
 from judgement_creator import compute_judgement
+from features import creating_features
 
 parameters = {
     'data_path': config.data_path,
@@ -28,7 +29,8 @@ def main(params):
     params['es'] = data_access.elastic_search_init(params)
     functions.create_index(params, rdds[0], page_ranks)
     judgements = compute_judgement(params, rdds)
-
+    creating_features()
+    create_ltr_model(judgements, params)
 
 if __name__ == '__main__':
     main(parameters)

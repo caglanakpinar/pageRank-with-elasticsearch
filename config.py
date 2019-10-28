@@ -59,6 +59,8 @@ features = ['id_ind', 'artists_ind', 'albums_ind' ,'popularity', 'popularity_art
             'page_rank_tracks', 'page_rank_artists', 'page_rank_albums']
 y = '_score'
 
+sample_count = 1000
+
 parameters_for_testing = {
     'colsample_bytree': [0.4,0.6,0.8],
     'gamma': [0,0.03,0.1,0.3],
