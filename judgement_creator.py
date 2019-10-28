@@ -4,26 +4,42 @@ from sklearn.cluster import KMeans
 import os
 import json
 from data_access import read_from_json
+import config
 
 def get_judgement_list(res, query, word):
     hits = pd.DataFrame(res['hits']['hits'])
-    hits['popularity'] = hits['_source'].apply(lambda x: x['popularity'])
-    hits['popularity_artist'] = hits['_source'].apply(lambda x: x['popularity_artist'])
-    hits['popularity_album'] = hits['_source'].apply(lambda x: x['popularity_album'])
-    hits['point'] = hits['popularity'] * hits['popularity_album'] * hits['popularity_artist']
+    for point in config.point_fileds:
+        hits[point] = hits['_source'].apply(lambda x: x[point])
+
+    def point_calcualtion(df):
+        df['point'] = df[config.point_fileds[0]]
+        for point in config.point_fileds[1:]:
+            df['point'] *= df[point]
+        df = df[df['point'] == df['point']]
+        return df
+
+    hits = point_calcualtion(hits)
     if len(hits) >= 5:
+        # relevance calculation
         kmeans = KMeans(n_clusters=4, random_state=4).fit([[i] for i in list(hits['point'])[1:]])
         relevance = pd.DataFrame(list(zip(list(kmeans.labels_),
-                                          list(hits['point'])[1:]))).rename(columns={0: 'segments', 1: 'search_results'})
+                                          list(hits['point'])[1:]))).rename(columns={0: 'segments',
+                                                                                     1: 'search_results'})
         relevance_pivot = relevance.pivot_table(
                                                 index='segments', aggfunc={'search_results': 'mean'}
                                                ).reset_index().sort_values(by='search_results', ascending=True
                                                                           ).reset_index().rename(
-                                                                            columns={'index': 'relevance'})
-        relevance_pivot['relevance'] = relevance_pivot['relevance'] + 1
+                                                                            columns={'index': 'relevance_label'})
+        relevance_pivot['relevance_label'] = relevance_pivot['relevance_label'] + 1
         relevance = pd.merge(relevance, relevance_pivot, on='segments', how='left')
-        relevance = pd.DataFrame([4] + list(relevance['relevance'])).rename(columns={0:'relevance'})
-        relevance = pd.concat([hits, relevance[['relevance']]], axis=1)
+        relevance = pd.DataFrame([4] + list(relevance['relevance_label'])).rename(columns={0:'relevance_label'})
+        relevance = pd.concat([hits, relevance[['relevance_label']]],
+                              axis=1).sort_values(by=['relevance_label', '_score'], ascending=True)
+        # re-score calcualtion
+        relevance_scores = pd.DataFrame(sorted(list(relevance['_score'])))
+        relevance['_score'] = pd.Series(relevance_scores)
+        relevance = relevance[relevance['_score'] == relevance['_score']]
+        print("okk")
     else:
         relevance = hits
         r = []
@@ -35,12 +51,13 @@ def get_judgement_list(res, query, word):
         relevance = pd.concat([relevance, pd.DataFrame(r).rename(columns={0: 'relevance'})], axis=0)
     relevance['query'] = query
     relevance['word'] = word
-    return relevance[['query', 'word', '_score', '_source', 'relevance']].to_dict('results')
+    return relevance.to_dict('results')#relevance[['query', 'word', '_score', '_source', 'relevance']].to_dict('results')
 
-def ab_test(params, rdds):  
+def     ab_test(params, rdds):
     words = []
     for rdd in rdds:
-        words += rdd.map(lambda x: x['name']).distinct().collect()
+        _w = rdd.map(lambda x: x['name']).distinct()
+        words += _w.collect()
     words = np.unique(words)
     counter = 0
     judgements = []
@@ -67,7 +84,7 @@ def ab_test(params, rdds):
 def compute_judgement(params, rdds):
     if params['judgements_to_json']:
         if os.path.exists(params['judgements_read_from_json']['judgement']):
-            judgements = read_from_json(parmas['judgements_read_from_json'])
+            judgements = read_from_json(params['judgements_read_from_json']['judgement'])
         else:
             judgements = ab_test(params, rdds)
     else:

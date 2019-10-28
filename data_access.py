@@ -29,6 +29,7 @@ def write_to_json(data, file_name):
         json.dump(data, outfile)
         
 def read_from_json(file_name):
+    print(file_name)
     with open(file_name, 'r') as file:
         data = json.loads(file.read())
     return data

@@ -1,97 +1,151 @@
 import config
+from data_access import write_to_json, read_from_json
+
+import os
 import numpy as np
 from main import parameters
+import json
+from pyspark.sql import SparkSession
+from pyspark.sql import Row
+from elasticsearch import helpers
+from multiprocessing import Pool
 
 
-def findPageRank(linkmatrix, pages, top, user):
-    eigval, eigvector= np.linalg.eig(linkmatrix)
-    if user:
-        return [t for t in sorted(zip(np.abs(eigval), pages, [user for t in range(top)]), reverse=True) if t[0] != 0][0:50]
-    else:
-        return [t for t in sorted(zip(np.abs(eigval), pages), reverse=True) if t[0] != 0]
+def find_page_rank(linkmatrix, pages):
+    eigval, eigvector = np.linalg.eig(linkmatrix)
+    return sorted(zip(np.abs(eigval), pages), reverse=True)
 
-def H_matrix_2(v):
-    droping_prob = parameters['droping_prob']  if parameters['droping_prob'] else config.droping_prob
-    i = list(v.keys())[0] # represents user_id
-    _rows = list(map(lambda x: int(x[0].split("_")[1]), v[i])) # track list, user start with
-    _columns = list(map(lambda x: int(x[1].split("_")[1]), v[i]))  # track list, user end with
-    totals = list(set(_rows + _columns)) # total track list user has listened
-    # Transition matrix has Null values rather than assing them 0, I assign 0.01.
-    # I convert to G value, so it is not a big deal to assign them 0.01.
-    smoothing = np.ones((1, len(totals)))* 0.01
-    _A = np.zeros((len(totals), len(totals))) # initialize zero matrix which is Transition matrix
-    # assign each transition to to A matrix
-    for r in range(len(_rows)):
-        for c in range(len(_columns)):
-            _A[r, c] += 1
-     # calculate columns sum
-    _A_sum = smoothing + _A.sum(axis=0)
-    # calculate probabilities
-    _A = (_A.T / _A_sum.T).T
-    # U(i, j) = 1 / (num of transactions)
-    U = np.ones((len(_A), len(_A))) * (1 / len(_A))
-    _G = ((1-droping_prob) * _A) + (droping_prob * U)
-    pageRank = findPageRank(_G, ['t_'+ str(t_n) for t_n in _rows], 5, i)
-    return pageRank
+def compute_page_rank(rdd):
+    u_ids = rdd.map(lambda x: x['id']).distinct()
+    totals = u_ids.count()
+    A = np.zeros((totals, totals))
+    U = np.ones((totals, totals)) * (1 / totals)
+    smoothing = np.ones((1, totals)) * 0.01
+    data = rdd.map(lambda x: (x['id'], x['id_2'], x['pl_count'])).collect()
+    ids = u_ids.collect()
 
-def find_artst(a, artist):
-    return list(filter(lambda x: x[0] == a, artist))[0][1]
+    word_idx = {}
+    count = 0
+    for i in ids:
+        word_idx[i] = count
+        count += 1
 
-def find_genre(g, genres):
-    return list(filter(lambda x: x[1] == g, genres))[0][0]
-
-def compute_user_track_page_rank(transactions_rdd):
-    pageRank_user = transactions_rdd.map(H_matrix_2).collect()
-    return pageRank_user
-
-
-def compute_track_page_rank(transactions_all_rdd, track_with_artist, genres):
-    track_list = transactions_all_rdd.map(lambda x: int(x[0].split("_")[1]), transactions_all_rdd).distinct()
-    total_tracks = track_list.count()
-    tracks = track_list.collect()
-    A = np.zeros((total_tracks, total_tracks))
-    U = np.ones((total_tracks, total_tracks)) * 1 / total_tracks
-    smoothing = np.ones((1, total_tracks)) * 0.01
-
-    for r in tracks:
-        for c in tracks:
-            A[r, c] += 1
-
+    counter = 0
+    for w1 in ids:
+        data_2 = list(filter(lambda x: x[0] == w1, data))
+        u_ids_2 = list(set(list(map(lambda x: x[1], data_2))) & set(ids))
+        data_3 = list(filter(lambda x: x[1] in u_ids_2, data_2))
+        if counter % 3000 == 0:
+            print(counter, "done..")
+        for c in data_3:
+            A[word_idx[w1], word_idx[c[1]]] = c[2]
+            A[word_idx[c[1]], word_idx[w1]] = c[2]
+        counter += 1
     droping_prob = parameters['droping_prob'] if parameters['droping_prob'] else config.droping_prob
     A_sum = smoothing + A.sum(axis=0)
     A = (A.T / A_sum.T).T
-    _G = ((1 - droping_prob) * A) + (droping_prob * U)
-    page_rank = findPageRank(_G, tracks, total_tracks, None)
-    page_rank = list(map(lambda x: (x[0], 't_' + str(x[1])), page_rank))
-    page_rank_with_artist = list(map(lambda x: (x[0], x[1], find_artst(x[1], track_with_artist)), page_rank))
-    page_rank_with_artist = list(map(lambda x: (x[0], x[1], x[2], find_genre(x[2], genres)), page_rank_with_artist))
-    return page_rank_with_artist
+    G = ((1 - droping_prob) * A) + (droping_prob * U)
+    page_rank = find_page_rank(G, ids)
+    print("page rank is done!")
+    return page_rank
 
-def create_index(params, page_rank_user, page_rank_with_artist):
-    # track index
+def create_id_to_index(tracks_rdd):
+    """
+    :param tracks_rdd: rdd with fields in it id, name, artist, album, name_arist, ..
+    :return: it returns unique album - track -artist of ids to index number. Ex: idx[artist]['Radiohead'] = 5
+    """
+
+    def get_index(v):
+        for m in config.metrics:
+            key = config.metrics[m] if m != 0 else 'id'
+            v[key+'_ind'] = idx_list[m][v[key]] # if v[m] in list(index_dict[m].keys()) else 234234234
+        return v
+    
+    idx_list = []
+    for m in config.metrics:
+        key = config.metrics[m] if m != 0 else 'id'
+        print(key)
+        _m = tracks_rdd.map(lambda x: x[key]).distinct().collect()
+        counter = 0
+        idx = {}
+        for i in _m:
+            idx[i] = counter
+            counter += 1
+        idx_list.append(idx)
+    asd = tracks_rdd.collect()
+    asd = list(map(lambda x: get_index(x), asd))
+    tracks_rdd = tracks_rdd.map(get_index)
+    return tracks_rdd
+
+def create_index_docs(rdd, page_ranks, spark):
+    def convert_group_columns(v):
+        obj = {}
+        counter = 0
+        for i in config.group_columns:
+            obj[i] = v[counter]
+            counter += 1
+        for i, pr in enumerate(page_ranks):
+            key = config.metrics[i] if i != 0 else 'id'
+            field = 'page_rank_' + config.metrics[i]
+            _rank = None
+            try:
+                _rank = list(filter(lambda x: x[1] == obj[key], pr))[0][0]
+            except:
+                print("ohh no!!")
+            obj[field] = _rank
+        return obj
+    df = spark.createDataFrame(rdd)
+    df = df.groupBy([col for col in config.group_columns if col.split("_")[-1] != "_ind"]).count()
+    return df.rdd.map(tuple).map(convert_group_columns)
+
+
+def create_index(params, tracks_rdd, page_ranks):
+    """
+    Creates index with given values : 'name', 'id', 'popularity', 'name_artist',
+                                      'popularity_artist', 'name_album',
+                                      'popularity_album', 'artist', 'album',
+                                      'page_rank_track', 'page_rank_artist', 'page_rank_album'
+    every each index obj represents tracks with artist and album in it.
+    if there is any prev created index, deletes then creates.
+    :param params: initial values are stored at params dictionary.
+    :param tracks_rdd: tracks rdd (list of obj): name(tracks), id (tracks), popularity (tracks)
+    :param tracks_rank: rank vector of tracks
+    :param artists_rank: rank vector of artist
+    :param albums_rank: rank vector of albums
+    :return: bulk inserts the tracks into music index
+    """
+    # deleting prev index if there is
+    params['es'].indices.delete('search_all', ignore=[400, 404])
+    params['es'].indices.create('search_all', body=config.index_settings) # creating again
+    # creating rdd to tuple file for index obj
+    asd = tracks_rdd.collect()
+    print("asd")
+    tracks_rdd = create_id_to_index(tracks_rdd)
+    tracks_pv_rdd = create_index_docs(tracks_rdd, page_ranks, params['spark'])
+    tracks2 = tracks_pv_rdd.collect()
+
+    def get_insert_obj(list_of_obj, index):
+        ids = list(map(lambda x: x['id'], list_of_obj))
+        counter = 0
+        for i in list_of_obj:
+            add_cmd = {"_index": index,  "_type": "text",  "_id": ids[counter], "_source": i}
+            counter += 1
+            yield add_cmd
+    print("yes")
+    helpers.bulk(params['es'], get_insert_obj(tracks2, 'music'))
+
+def get_page_ranks(params, rdds):
+    paths = params['page_rank_read_from_json']
+    page_ranks = []
     counter = 0
-    for r, t, a, g in page_rank_with_artist:
-        _e = config.track_index_obj
-        _e['track'], _e['artist'], _e['rank'], _e['genre'] = t, a, r, g
-        params['es'].index(index="music", id=counter, body=_e)
+    for rdd in rdds:
+        if os.path.exists(paths[config.metrics[counter]]):
+            page_rank = read_from_json(paths[config.metrics[counter]])
+        else:
+            page_rank = compute_page_rank(rdd)
+        page_ranks.append(page_rank)
+        if params['page_rank_to_json']:
+            if not os.path.exists(paths[config.metrics[counter]]):
+                write_to_json(page_rank, config.metrics[counter])
         counter += 1
-
-    # type of search index
-    counter = 0
-    type_ind = ['track', 'artist', 'genre']
-    for x in page_rank_user:
-        count = 0
-        for i in x[1:]:
-            _e = config.type_index_obj
-            _e['type'], _e['search'] = type_ind[count], i
-            params['es'].index(index="search_all", id=counter, body=_e)
-            count += 1
-            counter += 1
-    # user tracks index
-    counter = 0
-    for u in page_rank_user:
-        for t in u:
-            _e = config.user_index_obj
-            _e['user'], _e['track'], _e['rank'] = t[2], t[1], t[0]
-            params['es'].index(index="user_track", id=counter, body=_e)
-            counter += 1
+    return page_ranks

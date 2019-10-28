@@ -10,7 +10,7 @@ index_fields = ['name', 'id', 'popularity', 'name_artist',
                 ]
 
 group_columns = ['name', 'id', 'name_artist', 'name_album', 'artists', 'albums',
-                        'popularity', 'popularity_artist', 'popularity_album']
+                        'popularity', 'popularity_artist', 'popularity_album', 'id_ind', 'artists_ind', 'albums_ind']
 
 index_settings = {
     "settings": {
@@ -43,3 +43,62 @@ page_rank_file_path = {
                         'albums': os.environ['page_rank_albums_file_path']
                        }
 judgements_file_path = {'judgement': os.environ['judgements_file_path']}
+
+# ltr features configs
+music_features = "music_features"
+
+#ltr model configs
+model_parameters = {'hyper_parameters': os.environ['parameters_path']}
+
+point_fileds = ['popularity', 'popularity_artist', 'popularity_album',
+               'page_rank_tracks', 'page_rank_artists', 'page_rank_albums']
+
+source_fields = ['tracks', 'artists', 'albums', 'id_ind', 'artists_ind', 'albums_ind']
+
+features = ['id_ind', 'artists_ind', 'albums_ind' ,'popularity', 'popularity_artist', 'popularity_album',
+            'page_rank_tracks', 'page_rank_artists', 'page_rank_albums']
+y = '_score'
+
+parameters_for_testing = {
+    'colsample_bytree': [0.4,0.6,0.8],
+    'gamma': [0,0.03,0.1,0.3],
+    'min_child_weight': [1.5,6,10],
+    'learning_rate': [0.1,0.07],
+    'max_depth': [3,5],
+    'n_estimators': [100],
+    'reg_alpha': [1e-5, 1e-2,  0.75],
+    'reg_lambda' :[1e-5, 1e-2, 0.45],
+    'subsample': [0.6,0.95]
+}
+
+model_payload = {
+    "model": {
+        "name": "my_model",
+        "model": {
+            "type": "model/xgboost+json",
+            "definition": None
+        }
+    }
+}
+#
+#features = ['popularity', 'popularity_artist', 'popularity_album',
+#               'page_rank_tracks', 'page_rank_artists', 'page_rank_albums', 'id_ind', 'artist_ind', 'album_ind']
+#
+#features_temp = {
+#                 "name": None, "params": ["keywords"],
+#                 "template": {}
+#                }
+#
+#feature =   {"function_score": {
+#            "query": {"multi_match": {"query": keyword, "fields": []}},
+#            "functions": [{"field_value_factor": {"field": None}}],
+#            "boost_mode": "replace"
+#        }}
+#
+#feature_set = {
+#    "featureset": {
+#        "name": music_features,
+#        "features": []
+#    }
+#
+#}
