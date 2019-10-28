@@ -17,6 +17,8 @@ parameters = {
     'page_rank_read_from_json': config.page_rank_file_path,
     'judgements_to_json': True,
     'judgements_read_from_json': config.judgements_file_path
+    # This is for LTR XGBoost Model of Hyperparameter tunning. This process takes time
+    'parameter_tunning': config.model_parameters
 }
 
 def main(params):
