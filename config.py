@@ -23,6 +23,7 @@ index_settings = {
     }
 
 }
+
 elasticseach_boosting_field =  {"type": "text", "boost": None}
 
 a_b_test_day_count = 30
@@ -50,13 +51,14 @@ music_features = "music_features"
 #ltr model configs
 model_parameters = {'hyper_parameters': os.environ['parameters_path']}
 
+# this is the field which is point
+# point = popularity * popularity_artist * .... * page_rank_albums
 point_fileds = ['popularity', 'popularity_artist', 'popularity_album',
                'page_rank_tracks', 'page_rank_artists', 'page_rank_albums']
 
 source_fields = ['tracks', 'artists', 'albums', 'id_ind', 'artists_ind', 'albums_ind']
 
-features = ['id_ind', 'artists_ind', 'albums_ind' ,'popularity', 'popularity_artist', 'popularity_album',
-            'page_rank_tracks', 'page_rank_artists', 'page_rank_albums']
+features = ['point', 'id_ind', 'artists_ind', 'albums_ind']
 y = '_score'
 
 sample_count = 1000
@@ -82,25 +84,24 @@ model_payload = {
         }
     }
 }
-#
-#features = ['popularity', 'popularity_artist', 'popularity_album',
-#               'page_rank_tracks', 'page_rank_artists', 'page_rank_albums', 'id_ind', 'artist_ind', 'album_ind']
-#
-#features_temp = {
-#                 "name": None, "params": ["keywords"],
-#                 "template": {}
-#                }
-#
-#feature =   {"function_score": {
-#            "query": {"multi_match": {"query": keyword, "fields": []}},
-#            "functions": [{"field_value_factor": {"field": None}}],
-#            "boost_mode": "replace"
-#        }}
-#
-#feature_set = {
-#    "featureset": {
-#        "name": music_features,
-#        "features": []
-#    }
-#
-#}
+
+keyword =  "{{keywords}}"
+
+features_temp = {
+                 "name": None, "params": ["keywords"],
+                 "template": {}
+                }
+
+temp_feature =   {"function_score": {
+                                     "query": {"multi_match": {"query": keyword, "fields": []}},
+                                     "functions": [{"field_value_factor": {"field": None}}],
+                                     "boost_mode": "replace"
+        }}
+
+temp_feature_set = {
+                    "featureset": {
+                                    "name": music_features,
+                                    "features": []
+}
+
+}

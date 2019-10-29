@@ -1,8 +1,13 @@
-import random
-
 import config
 from data_access import write_to_json, read_from_json
+
+import random
+import pandas as pd
+import xgboost as xgb
 from sklearn.metrics import mean_squared_error
+from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GridSearchCV
+import random
 
 def data_preparation(df, source_fields):
     df = df.reset_index()
@@ -60,9 +65,9 @@ def train_xgboost(X_train, y_train, jd, params):
     # data preparation for xgboost with using DMatrix
     # Categorical features not supported in DMatrix. label them by using indexes.
     data_dmatrix = xgb.DMatrix(data=X, label=y)
-    X_train_sample, X_test_sample = sample_data_for_parameter_tuning
+    X_train_sample, X_test_sample = sample_data_for_parameter_tuning(jd)
     tuned_parameters = check_for_tuned_model_parameters(X_train_sample, X_test_sample, params)
-    xg_regressor = xgb.XGBRegressor(**tuned_parameters)
+    xg_regressor = xgb.XGBRegressor(**tuned_parameters, treads=-1)
     xg_regressor.fit(X_train, y_train)
     return xg_regressor
 
@@ -82,10 +87,10 @@ def upload_model_to_elasticsearch(file_name):
     path = urljoin(url, path)
 
 def create_ltr_model(judgements, params):
-    jd = pd.DataFrame(judgments)
+    jd = pd.DataFrame(judgements)
     jd = data_preparation(jd, config.source_fields)
-    y = jd[y]
-    X = jd[features]
+    y = jd[config.y]
+    X = jd[config.features]
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=123)
     xg_regressor = train_xgboost(X_train, y_train, jd, params)
     mse = test_mode(xg_regressor, X_test, y_test)

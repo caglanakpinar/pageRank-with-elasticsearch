@@ -2,7 +2,8 @@ import data_access
 import functions
 import config
 from judgement_creator import compute_judgement
-from features import creating_features
+from feature import creating_features
+from train import create_ltr_model
 
 parameters = {
     'data_path': config.data_path,
@@ -17,7 +18,7 @@ parameters = {
     'page_rank_to_json': True,
     'page_rank_read_from_json': config.page_rank_file_path,
     'judgements_to_json': True,
-    'judgements_read_from_json': config.judgements_file_path
+    'judgements_read_from_json': config.judgements_file_path,
     # This is for LTR XGBoost Model of Hyperparameter tunning. This process takes time
     'parameter_tunning': config.model_parameters
 }

@@ -11,6 +11,14 @@ from elasticsearch import helpers
 from multiprocessing import Pool
 
 
+def point_calcualtion(obj):
+    obj['point'] = obj[config.point_fileds[0]] if obj[config.point_fileds[0]] else 1
+    for f in config.point_fileds[1:]:
+        if obj[f]:
+            obj['point'] *= obj[f]
+    obj['point'] = obj['point'] if obj['point'] else 0
+    return obj
+
 def find_page_rank(linkmatrix, pages):
     eigval, eigvector = np.linalg.eig(linkmatrix)
     return sorted(zip(np.abs(eigval), pages), reverse=True)
@@ -78,6 +86,7 @@ def create_id_to_index(tracks_rdd):
     return tracks_rdd
 
 def create_index_docs(rdd, page_ranks, spark):
+
     def convert_group_columns(v):
         obj = {}
         counter = 0
@@ -93,7 +102,9 @@ def create_index_docs(rdd, page_ranks, spark):
             except:
                 print("ohh no!!")
             obj[field] = _rank
+        obj = point_calcualtion(obj)
         return obj
+
     df = spark.createDataFrame(rdd)
     df = df.groupBy([col for col in config.group_columns if col.split("_")[-1] != "_ind"]).count()
     return df.rdd.map(tuple).map(convert_group_columns)
@@ -123,7 +134,7 @@ def create_index(params, tracks_rdd, page_ranks):
     tracks_rdd = create_id_to_index(tracks_rdd)
     tracks_pv_rdd = create_index_docs(tracks_rdd, page_ranks, params['spark'])
     tracks2 = tracks_pv_rdd.collect()
-
+    print(tracks2[0])
     def get_insert_obj(list_of_obj, index):
         ids = list(map(lambda x: x['id'], list_of_obj))
         counter = 0
@@ -149,3 +160,4 @@ def get_page_ranks(params, rdds):
                 write_to_json(page_rank, config.metrics[counter])
         counter += 1
     return page_ranks
+
