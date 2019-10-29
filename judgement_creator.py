@@ -8,47 +8,39 @@ import config
 
 def get_judgement_list(res, query, word):
     hits = pd.DataFrame(res['hits']['hits'])
-    for point in config.point_fileds:
-        hits[point] = hits['_source'].apply(lambda x: x[point])
-
-    def point_calcualtion(df):
-        df['point'] = df[config.point_fileds[0]]
-        for point in config.point_fileds[1:]:
-            df['point'] *= df[point]
-        df = df[df['point'] == df['point']]
-        return df
-
-    hits = point_calcualtion(hits)
-    if len(hits) >= 5:
-        # relevance calculation
-        kmeans = KMeans(n_clusters=4, random_state=4).fit([[i] for i in list(hits['point'])[1:]])
-        relevance = pd.DataFrame(list(zip(list(kmeans.labels_),
-                                          list(hits['point'])[1:]))).rename(columns={0: 'segments',
-                                                                                     1: 'search_results'})
-        relevance_pivot = relevance.pivot_table(
-                                                index='segments', aggfunc={'search_results': 'mean'}
-                                               ).reset_index().sort_values(by='search_results', ascending=True
-                                                                          ).reset_index().rename(
-                                                                            columns={'index': 'relevance_label'})
-        relevance_pivot['relevance_label'] = relevance_pivot['relevance_label'] + 1
-        relevance = pd.merge(relevance, relevance_pivot, on='segments', how='left')
-        relevance = pd.DataFrame([4] + list(relevance['relevance_label'])).rename(columns={0:'relevance_label'})
-        relevance = pd.concat([hits, relevance[['relevance_label']]],
-                              axis=1).sort_values(by=['relevance_label', '_score'], ascending=True)
-        # re-score calcualtion
-        relevance_scores = pd.DataFrame(sorted(list(relevance['_score'])))
-        relevance['_score'] = pd.Series(relevance_scores)
-        relevance = relevance[relevance['_score'] == relevance['_score']]
-        print("okk")
-    else:
-        relevance = hits
-        r = []
-        for i in range(len(hits)):
-            if i == 0:
-               r.append(4)
-            else:
-                r.append(1)
-        relevance = pd.concat([relevance, pd.DataFrame(r).rename(columns={0: 'relevance'})], axis=0)
+    hits['point'] = hits.apply(lambda row: row['_source']['point'], axis=1)
+    hits = hits[hits['point'] != 0]
+    #if len(hits) >= 5:
+    #    # relevance calculation
+    #    kmeans = KMeans(n_clusters=4, random_state=4).fit([[i] for i in list(hits['point'])[1:]])
+    #    relevance = pd.DataFrame(list(zip(list(kmeans.labels_),
+    #                                      list(hits['point'])[1:]))).rename(columns={0: 'segments',
+    #                                                                                 1: 'search_results'})
+    #    relevance_pivot = relevance.pivot_table(
+    #                                            index='segments', aggfunc={'search_results': 'mean'}
+    #                                           ).reset_index().sort_values(by='search_results', ascending=True
+    #                                                                      ).reset_index().rename(
+    #                                                                        columns={'index': 'relevance_label'})
+    #    relevance_pivot['relevance_label'] = relevance_pivot['relevance_label'] + 1
+    #    relevance = pd.merge(relevance, relevance_pivot, on='segments', how='left')
+    #    relevance = pd.DataFrame([4] + list(relevance['relevance_label'])).rename(columns={0:'relevance_label'})
+    #    relevance = pd.concat([hits, relevance[['relevance_label']]],
+    #                          axis=1).sort_values(by=['relevance_label', '_score'], ascending=True)
+    #    relevance = relevance.reset_index(drop=True).reset_index().rename(columns={'index': 'rank_score'})
+    #    relevance['rank_score'] = 10 - relevance['rank_score']
+#
+    #else:
+    #    relevance = hits
+    #    r = []
+    #    for i in range(len(hits)):
+    #        if i == 0:
+    #           r.append(4)
+    #        else:
+    #            r.append(1)
+    #    relevance = pd.concat([relevance, pd.DataFrame(r).rename(columns={0: 'relevance'})], axis=0)
+    relevance = hits
+    relevance = relevance.sort_values(by='point', ascending=False)
+    relevance = relevance.reset_index(drop=True).reset_index().rename(columns={'index': 'rank_score'})
     relevance['query'] = query
     relevance['word'] = word
     return relevance.to_dict('results')#relevance[['query', 'word', '_score', '_source', 'relevance']].to_dict('results')
@@ -59,8 +51,8 @@ def     ab_test(params, rdds):
         _w = rdd.map(lambda x: x['name']).distinct()
         words += _w.collect()
     words = np.unique(words)
-    counter = 0
     judgements = []
+    counter = 0
     for i in words:
         print("word :", i)
         _query = {
@@ -68,7 +60,7 @@ def     ab_test(params, rdds):
                 "multi_match": {"query": i,
                                 "fields": ["name", "name_artist", "name_album"]
                                 }
-            }, "size": 20}
+            }, "size": 10}
         res = params['es'].search(index='music', body=_query)
         if res['hits']['hits'] != []:
             #try:

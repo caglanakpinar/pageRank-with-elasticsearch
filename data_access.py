@@ -33,3 +33,4 @@ def read_from_json(file_name):
     with open(file_name, 'r') as file:
         data = json.loads(file.read())
     return data
+
